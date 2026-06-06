@@ -24,5 +24,6 @@ models/
 # 数据分包（不上传 git，用 Release）
 data_chunks/
 
-# 结果打包
-results_*.tar.gz
+# 隐私文件
+resume*
+
