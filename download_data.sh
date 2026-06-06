@@ -40,17 +40,11 @@ for chunk in "${CHUNKS[@]}"; do
     url="${BASE_URL}/${chunk}"
     dest="${CHUNK_DIR}/${chunk}"
 
-    if [ -f "$dest" ]; then
-        local_size=$(stat -f%z "$dest" 2>/dev/null || stat -c%s "$dest" 2>/dev/null || echo 0)
-        echo "  跳过 ${chunk}（已存在，${local_size} bytes）"
-        continue
-    fi
-
     echo "  下载 ${chunk}..."
     if [ "$DL_CMD" = "wget -c -O" ]; then
-        wget -c -O "$dest" "$url"
+        wget -c -O "$dest" "$url"   # -c 自动续传，已完成则跳过
     else
-        curl -L -o "$dest" "$url"
+        curl -C - -L -o "$dest" "$url"  # -C - 也支持续传
     fi
 done
 

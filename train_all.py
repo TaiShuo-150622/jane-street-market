@@ -125,12 +125,12 @@ def step_catboost():
 def step_mlp_v1():
     """Step 2: MLP v1 (全量 88 维)"""
     section("Step 2/5: MLP v1 (全量 88 维特征)")
-    if is_model_done("mlp_full.pth"):
+    if is_model_done("mlp_full_results.json"):   # results.json 只有训练完整结束才写
         r2 = _load_model_r2("mlp_full_results.json")
         return {"mlp_full": {"r2": r2, "status": "cached"}}
     try:
         from src.train_mlp import train
-        r2 = train(feature_set="full", save_prefix="mlp")
+        r2 = train(feature_set="full", save_prefix="mlp", resume=True)  # resume=True: 有 checkpoint 自动续
         print(f"  ✅ MLP v1 完成: R²={r2:.6f}")
         return {"mlp_full": {"r2": float(r2) if r2 else None, "status": "ok"}}
     except Exception as e:
@@ -143,14 +143,14 @@ def step_mlp_v1():
 def step_mlp_v2():
     """Step 3: MLP v2 (TDA 42 维)"""
     section("Step 3/5: MLP v2 (TDA 42 维特征)")
-    if is_model_done("mlp_tda.pth"):
+    if is_model_done("mlp_tda_results.json"):   # results.json only written after full completion
         r2 = _load_model_r2("mlp_tda_results.json")
         return {"mlp_tda": {"r2": r2, "status": "cached"}}
     try:
         from src.data_utils import compute_tda_clusters
         compute_tda_clusters()  # 确保 TDA 聚类完成
         from src.train_mlp import train
-        r2 = train(feature_set="tda", save_prefix="mlp")
+        r2 = train(feature_set="tda", save_prefix="mlp", resume=True)
         print(f"  ✅ MLP v2 完成: R²={r2:.6f}")
         return {"mlp_tda": {"r2": float(r2) if r2 else None, "status": "ok"}}
     except Exception as e:
