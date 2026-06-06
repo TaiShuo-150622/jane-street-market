@@ -21,5 +21,8 @@ models/
 .vscode/
 .DS_Store
 
-# 日志
-*.log
+# 数据分包（不上传 git，用 Release）
+data_chunks/
+
+# 结果打包
+results_*.tar.gz
