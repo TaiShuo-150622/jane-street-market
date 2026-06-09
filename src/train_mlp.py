@@ -217,6 +217,7 @@ def train(
                 print("  ⚠ optimizer state 不兼容，使用新优化器")
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=8, verbose=True,
+            min_lr=1e-6,
         )
         start_epoch = checkpoint.get("epoch", 0) + 1
         history = checkpoint.get("history", {"train_loss": [], "val_loss": [], "val_r2": []})
@@ -228,6 +229,7 @@ def train(
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=8, verbose=True,
+            min_lr=1e-6,
         )
         best_val_r2 = -np.inf
         best_epoch = 0
@@ -418,6 +420,10 @@ def train(
     total_time = time.time() - t0
     print(f"\n  ✓ MLP ({feature_set}) 完成 | R²={val_r2:.6f} | 耗时: {total_time:.1f}s ({total_time/60:.1f} min)")
 
+    # ---- R² 收敛曲线 ----
+    if history["val_r2"]:
+        _print_r2_progression(history, best_epoch)
+
     # 保存验证集预测（用于集成）
     preds_path = MODELS_DIR / f"{save_prefix}_{feature_set}_val_preds.npy"
     np.save(preds_path, y_pred_val.astype(np.float32))
@@ -459,6 +465,48 @@ def train_both():
     print("=" * 70)
 
     return results
+
+
+def _print_r2_progression(history: dict, best_epoch: int):
+    """打印 R² 收敛曲线，方便判断训练是否到位"""
+    val_r2s = history["val_r2"]
+    n = len(val_r2s)
+    if n == 0:
+        return
+
+    # 找关键节点
+    best_idx = val_r2s.index(max(val_r2s))
+    first_positive = next((i for i, r in enumerate(val_r2s) if r > 0), None)
+    last_10 = val_r2s[-min(10, n):]
+
+    print(f"\n  R² 收敛曲线 ({n} epochs):")
+    # 打印每 5 epoch + 关键点
+    printed = set()
+    for i in range(n):
+        if i == 0 or i == n - 1 or i == best_idx or (i + 1) % 5 == 0:
+            printed.add(i)
+    printed = sorted(printed)
+
+    for i in printed:
+        marker = ""
+        if i == 0:
+            marker = " (start)"
+        if i == best_idx:
+            marker = " ← BEST"
+        if i == n - 1:
+            marker = " (final)"
+        bar = "+" * max(0, int(val_r2s[i] * 500)) if val_r2s[i] > 0 else "-" * min(5, int(abs(val_r2s[i]) * 10))
+        print(f"    epoch {i+1:3d}: R²={val_r2s[i]:+.6f}  {bar}{marker}")
+
+    # 收敛判断
+    if len(last_10) >= 5:
+        range_last_10 = max(last_10) - min(last_10)
+        if range_last_10 < 0.0005 and val_r2s[best_idx] > 0:
+            print(f"\n  ✅ 最后 10 epoch R² 波动 {range_last_10:.6f} < 0.0005，已收敛")
+        elif range_last_10 < 0.001:
+            print(f"\n  ⚠️ 最后 10 epoch R² 波动 {range_last_10:.6f}，可能还在缓慢提升")
+        else:
+            print(f"\n  ❌ 最后 10 epoch R² 波动 {range_last_10:.6f} > 0.001，未收敛，考虑增加 patience")
 
 
 def _clear_gpu():
