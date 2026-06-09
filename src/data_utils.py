@@ -45,6 +45,12 @@ RESPONDER_COLS = [f"responder_{i}" for i in range(9) if i != 6]
 # ---- 全量 96 维特征集 ----
 FULL_FEATURES_96 = CONTINUOUS_FEATURES + CAT_FEATURES + LAG_COLS
 
+# ---- Regime 感知特征（torsion 分析发现的关键偏离特征）----
+# 这些特征在 market regime shift 时发生明显偏移 → 模型预测摇摆
+REGIME_KEY_FEATURES = ["feature_39", "feature_50", "feature_41", "feature_05", "feature_08"]
+REGIME_DELTA_NAMES = [f"delta_{f}" for f in REGIME_KEY_FEATURES]
+REGIME_SCORE_NAME = ["regime_score"]
+
 # ---- TDA 42 维特征集（由 compute_tda_clusters 运行时填充）----
 # 5 个 PCA 主成分 + 17 个孤立特征 + 3 个分类 + 8 个 responder + 9 个 lag
 TDA_CLUSTER_FEATURES: dict[str, list[str]] = {}  # {cluster_name: [feature_list]}
@@ -286,8 +292,8 @@ def prepare_tree_data(
     feat_names = list(base_features)
 
     for c in base_features:
-        col_train = train_df[c].to_numpy().astype(np.float64)
-        col_val = val_df[c].to_numpy().astype(np.float64)
+        col_train = train_df[c].to_numpy().astype(np.float32)
+        col_val = val_df[c].to_numpy().astype(np.float32)
         col_train = np.nan_to_num(col_train, nan=0.0)
         col_val = np.nan_to_num(col_val, nan=0.0)
         X_train_parts.append(col_train.reshape(-1, 1))
@@ -301,16 +307,16 @@ def prepare_tree_data(
             col_val = val_df[cat].to_numpy()
             unique_vals = sorted(set(int(v) for v in np.unique(col_train) if not np.isnan(v)))
             for uv in unique_vals:
-                oh_train = (col_train == uv).astype(np.float64).reshape(-1, 1)
-                oh_val = (col_val == uv).astype(np.float64).reshape(-1, 1)
+                oh_train = (col_train == uv).astype(np.float32).reshape(-1, 1)
+                oh_val = (col_val == uv).astype(np.float32).reshape(-1, 1)
                 X_train_parts.append(oh_train)
                 X_val_parts.append(oh_val)
                 feat_names.append(f"{cat}_{uv}")
     else:
         # 保持为整数（CatBoost 原生支持）
         for cat in CAT_FEATURES:
-            col_train = train_df[cat].to_numpy().astype(np.float64).reshape(-1, 1)
-            col_val = val_df[cat].to_numpy().astype(np.float64).reshape(-1, 1)
+            col_train = train_df[cat].to_numpy().astype(np.float32).reshape(-1, 1)
+            col_val = val_df[cat].to_numpy().astype(np.float32).reshape(-1, 1)
             col_train = np.nan_to_num(col_train, nan=0.0)
             col_val = np.nan_to_num(col_val, nan=0.0)
             X_train_parts.append(col_train)
@@ -476,12 +482,52 @@ def _build_tda_features(X_full, feature_cols, stats):
     return X_tda
 
 
-def prepare_mlp_data(feature_set: str = "full"):
+def _add_regime_features(
+    X: np.ndarray,
+    symbol_ids: np.ndarray,
+    feature_names: list[str],
+) -> tuple[np.ndarray, list[str]]:
+    """
+    在标准化后的特征矩阵上添加 Δfeatures 和 regime_score。
+
+    Δfeature: 每个 symbol 内相邻时间步的特征变化（一阶差分）
+    regime_score: 5 个关键特征偏离均值的程度之和
+        → score 高 = 当前数据离训练分布远 = regime shift 信号
+    """
+    key_indices = [feature_names.index(f) for f in REGIME_KEY_FEATURES if f in feature_names]
+    n = X.shape[0]
+    n_delta = len(key_indices)
+
+    # ---- Δfeatures: per-symbol 一阶差分 ----
+    delta = np.zeros((n, n_delta), dtype=np.float32)
+    unique_sids = np.unique(symbol_ids)
+    for i, feat_idx in enumerate(key_indices):
+        col = X[:, feat_idx]
+        for sid in unique_sids:
+            mask = symbol_ids == sid
+            idx = np.where(mask)[0]
+            if len(idx) < 2:
+                continue
+            vals = col[idx]
+            diff = np.zeros(len(vals), dtype=np.float32)
+            diff[1:] = vals[1:] - vals[:-1]
+            delta[idx, i] = diff.astype(np.float32)
+
+    # ---- regime_score: sum of |z-score| of key features ----
+    regime = np.abs(X[:, key_indices].astype(np.float64)).sum(axis=1, keepdims=True).astype(np.float32)
+
+    X_aug = np.column_stack([X, delta, regime])
+    new_names = REGIME_DELTA_NAMES + REGIME_SCORE_NAME
+    return X_aug, new_names
+
+
+def prepare_mlp_data(feature_set: str = "full", sample_rate: int = 1):
     """
     为 MLP 准备数据。
 
     参数:
         feature_set: "full" (96维) 或 "tda" (42维)
+        sample_rate: 1/N 采样率（1=全量，3=1/3，降低 RAM 占用）
 
     返回:
         (X_train, y_train, w_train), (X_val, y_val, w_val), feature_names
@@ -503,6 +549,13 @@ def prepare_mlp_data(feature_set: str = "full"):
     train_lazy = _get_train_lazy()
     stats = compute_stats(train_lazy, FULL_FEATURES_96)
 
+    # 采样训练集（减少 RAM，统计量仍用全量数据计算）
+    if sample_rate > 1:
+        train_lazy = train_lazy.filter(
+            pl.int_range(0, pl.len()) % sample_rate == 0
+        )
+        print(f"  训练集采样率: 1/{sample_rate}")
+
     # 加载训练集
     print("  加载训练集...")
     X_train_full, y_train, w_train = _load_and_normalize(train_lazy, FULL_FEATURES_96, stats)
@@ -512,20 +565,36 @@ def prepare_mlp_data(feature_set: str = "full"):
     val_lazy = _get_val_lazy()
     X_val_full, y_val, w_val = _load_and_normalize(val_lazy, FULL_FEATURES_96, stats)
 
-    if feature_set == "tda":
-        # 降维至 42 维
-        print("  构建 TDA 42 维特征...")
-        X_train = _build_tda_features(X_train_full, FULL_FEATURES_96, stats)
-        X_val = _build_tda_features(X_val_full, FULL_FEATURES_96, stats)
-        feat_names = TDA_42_FEATURES
+    # ---- 添加 regime 感知特征（Δ + regime_score）----
+    print("  计算 regime 感知特征...")
+    train_sids = train_lazy.select("symbol_id").collect()["symbol_id"].to_numpy()
+    val_sids = val_lazy.select("symbol_id").collect()["symbol_id"].to_numpy()
 
-        # 释放全量数据
-        del X_train_full, X_val_full
+    X_train_regime, regime_names = _add_regime_features(X_train_full, train_sids, FULL_FEATURES_96)
+    X_val_regime, _ = _add_regime_features(X_val_full, val_sids, FULL_FEATURES_96)
+    n_regime = len(regime_names)
+    print(f"  新增 {n_regime} 维: {regime_names}")
+
+    if feature_set == "tda":
+        # 降维至 42 维（只对原始 96 维，regime 特征保持原样）
+        print("  构建 TDA 42 维特征...")
+        X_train_tda = _build_tda_features(X_train_full, FULL_FEATURES_96, stats)
+        X_val_tda = _build_tda_features(X_val_full, FULL_FEATURES_96, stats)
+        # 拼接 regime 特征
+        X_train = np.column_stack([X_train_tda, X_train_regime[:, -n_regime:]])
+        X_val = np.column_stack([X_val_tda, X_val_regime[:, -n_regime:]])
+        feat_names = TDA_42_FEATURES + regime_names
+
+        # 释放中间数组
+        del X_train_full, X_val_full, X_train_regime, X_val_regime
         gc.collect()
     else:
-        X_train = X_train_full
-        X_val = X_val_full
-        feat_names = FULL_FEATURES_96
+        X_train = X_train_regime
+        X_val = X_val_regime
+        feat_names = FULL_FEATURES_96 + regime_names
+
+        del X_train_full, X_val_full
+        gc.collect()
 
     elapsed = time.time() - t0
     print(f"  X_train: {X_train.shape}, y_train: {y_train.shape}")
@@ -561,7 +630,7 @@ def print_memory_info():
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 props = torch.cuda.get_device_properties(i)
-                total_mb = props.total_mem / 1024**2
+                total_mb = props.total_memory / 1024**2
                 print(f"  GPU {i}: {props.name}, {total_mb:.0f} MB VRAM")
     except ImportError:
         print("  (PyTorch 未安装)")

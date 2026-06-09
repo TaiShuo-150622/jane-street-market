@@ -45,7 +45,10 @@ from src.metrics import weighted_r2
 RUN_XGBOOST = True
 
 # 采样率（树模型用 1/N 数据，控制内存和时间）
-TREE_SAMPLE_RATE = 6  # 1/6 ≈ 6.5M rows
+TREE_SAMPLE_RATE = 10  # 1/10 ≈ 3.6M rows（内存紧张可继续调大）
+
+# MLP 训练集采样率（1=全量 ≈36M rows ≈14GB；3=1/3 ≈12M rows ≈5GB）
+MLP_SAMPLE_RATE = 1  # 内存紧张建议改为 3
 
 # 集成模式: "grid_search" | "stacking" | "simple_average"
 ENSEMBLE_MODE = "grid_search"
@@ -130,7 +133,7 @@ def step_mlp_v1():
         return {"mlp_full": {"r2": r2, "status": "cached"}}
     try:
         from src.train_mlp import train
-        r2 = train(feature_set="full", save_prefix="mlp", resume=True)  # resume=True: 有 checkpoint 自动续
+        r2 = train(feature_set="full", save_prefix="mlp", resume=True, sample_rate=MLP_SAMPLE_RATE)
         print(f"  ✅ MLP v1 完成: R²={r2:.6f}")
         return {"mlp_full": {"r2": float(r2) if r2 else None, "status": "ok"}}
     except Exception as e:
@@ -150,7 +153,7 @@ def step_mlp_v2():
         from src.data_utils import compute_tda_clusters
         compute_tda_clusters()  # 确保 TDA 聚类完成
         from src.train_mlp import train
-        r2 = train(feature_set="tda", save_prefix="mlp", resume=True)
+        r2 = train(feature_set="tda", save_prefix="mlp", resume=True, sample_rate=MLP_SAMPLE_RATE)
         print(f"  ✅ MLP v2 完成: R²={r2:.6f}")
         return {"mlp_tda": {"r2": float(r2) if r2 else None, "status": "ok"}}
     except Exception as e:
@@ -265,7 +268,7 @@ def main():
             print(f"  检测到 {n_gpus} 张 GPU，将启用多 GPU 训练")
             for i in range(n_gpus):
                 props = torch.cuda.get_device_properties(i)
-                print(f"    GPU {i}: {props.name}, {props.total_mem/1024**3:.1f} GB")
+                print(f"    GPU {i}: {props.name}, {props.total_memory/1024**3:.1f} GB")
     except ImportError:
         pass
 

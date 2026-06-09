@@ -1,6 +1,38 @@
 # GPU 机器部署指南
 
-## 环境: 6 × 2080 Ti, CUDA 11.8 或 12.4
+## Windows 部署（PowerShell）
+
+> 适用: Windows 10/11, NVIDIA GPU, CUDA 11.x 或 12.x
+
+```powershell
+# 1. Clone 代码
+git clone https://github.com/TaiShuo-150622/jane-street-market.git
+cd jane-street-market
+
+# 2. 下载数据（自动下载 6 个分块 → 合并 → MD5 校验）
+.\download_data.ps1
+
+# 3. 安装环境（自动检测 CUDA 版本 → 装 PyTorch + 依赖）
+.\setup_gpu.ps1
+
+# 4. 激活虚拟环境（如果还没激活）
+.\venv\Scripts\Activate.ps1
+
+# 5. 预检查
+python check_env.py
+
+# 6. 开跑
+python train_all.py
+```
+
+> **注意:** 如果 PowerShell 报 "无法加载文件" 错误，先运行:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
+
+---
+
+## Linux 部署 (6 × 2080 Ti, CUDA 11.8 或 12.4)
 
 ---
 

@@ -81,7 +81,7 @@ if torch.cuda.is_available():
     print(f'GPU count: {torch.cuda.device_count()}')
     for i in range(torch.cuda.device_count()):
         p = torch.cuda.get_device_properties(i)
-        print(f'  GPU {i}: {p.name}, {p.total_mem/1024**3:.1f} GB')
+        print(f'  GPU {i}: {p.name}, {p.total_memory/1024**3:.1f} GB')
 print()
 
 import catboost

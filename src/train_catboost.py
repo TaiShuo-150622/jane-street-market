@@ -78,6 +78,17 @@ def train(
         print("  ⚠ CatBoost 未安装！")
         return None
 
+    # 自动检测 GPU 数量
+    n_gpus = _detect_gpu_count()
+    if n_gpus == 0:
+        print("  ⚠ 未检测到 GPU！将使用 CPU 模式（可能非常慢）")
+        devices = "0"
+        task_type = "CPU"
+    else:
+        devices = "0" if n_gpus == 1 else f"0-{n_gpus - 1}"
+        task_type = "GPU"
+    print(f"  检测到 {n_gpus} 张 GPU → devices=\"{devices}\", task_type={task_type}")
+
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
@@ -127,8 +138,8 @@ def train(
         loss_function="RMSE",
         eval_metric="RMSE",
         random_seed=42,
-        task_type="GPU",
-        devices="0-5",  # 6 × 2080 Ti
+        task_type=task_type,
+        devices=devices,  # 自动检测
         verbose=verbose,
         allow_writing_files=False,
         # GPU 性能优化
@@ -205,6 +216,31 @@ def train(
     _clear_gpu_memory()
 
     return val_r2
+
+
+def _detect_gpu_count() -> int:
+    """自动检测可用 GPU 数量（优先 torch，其次 nvidia-smi）"""
+    # 方式 1: PyTorch
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.device_count()
+    except ImportError:
+        pass
+
+    # 方式 2: nvidia-smi
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True
+        )
+        lines = [l for l in result.stdout.strip().split("\n") if l.strip()]
+        return len(lines)
+    except Exception:
+        pass
+
+    return 0
 
 
 def _clear_gpu_memory():

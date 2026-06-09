@@ -47,7 +47,7 @@ try:
         print(f"  GPU 数量: {n_gpus}")
         for i in range(n_gpus):
             props = torch.cuda.get_device_properties(i)
-            vram_gb = props.total_mem / 1024**3
+            vram_gb = props.total_memory / 1024**3
             total_vram += vram_gb
             print(f"  GPU {i}: {props.name}, {vram_gb:.1f} GB VRAM, CC={props.major}.{props.minor}")
             if vram_gb < 8:
@@ -134,5 +134,11 @@ if issues:
     print(f"\n  请先解决以上问题再运行 train_all.py")
 else:
     print(f"  一切就绪！运行:")
-    print(f"    nohup python -u train_all.py > train_$(date +%Y%m%d_%H%M).log 2>&1 &")
+    # 自动检测平台，给对应的命令提示
+    import platform
+    if platform.system() == "Windows":
+        print(f"    python train_all.py")
+        print(f"    (训练日志自动保存到 models/training_report.json)")
+    else:
+        print(f"    nohup python -u train_all.py > train_$(date +%Y%m%d_%H%M).log 2>&1 &")
 print("=" * 60)

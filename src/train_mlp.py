@@ -94,10 +94,11 @@ def train(
     weight_decay: float = 5e-4,
     max_epochs: int = 200,
     patience: int = 25,
-    num_workers: int = 4,
+    num_workers: int = 0,
     save_prefix: str = "mlp",
     resume: bool = False,
     cache_data: bool = True,
+    sample_rate: int = 1,
 ):
     """
     训练 MLP 模型（GPU）。
@@ -111,9 +112,10 @@ def train(
         weight_decay: AdamW weight decay
         max_epochs: 最大 epoch
         patience: 早停耐心值
-        num_workers: DataLoader 工作线程
+        num_workers: DataLoader 工作线程（Windows 建议 0）
         resume: 是否从 checkpoint 恢复训练
         cache_data: 是否缓存标准化后的数据到 disk（加速 resume）
+        sample_rate: 1/N 训练集采样率（1=全量，3=1/3，降低 RAM）
     """
     if hidden_dims is None:
         hidden_dims = [512, 512, 256]
@@ -139,7 +141,7 @@ def train(
     print(f"  设备: {device}")
     if device.type == "cuda":
         props = torch.cuda.get_device_properties(0)
-        print(f"  GPU: {props.name}, {props.total_mem / 1024**2:.0f} MB")
+        print(f"  GPU: {props.name}, {props.total_memory / 1024**2:.0f} MB")
 
     t0 = time.time()
 
@@ -164,9 +166,9 @@ def train(
             w_val = np.load(data_cache_dir / f"{feature_set}_w_val.npy")
             feat_names = FULL_FEATURES_96 if feature_set == "full" else TDA_42_FEATURES
         else:
-            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set)
+            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate)
     else:
-        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set)
+        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate)
 
         # 写缓存（加速下次 load / resume）
         if cache_data:
