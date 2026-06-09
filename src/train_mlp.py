@@ -20,6 +20,7 @@ import json
 from .data_utils import (
     prepare_mlp_data, MODELS_DIR, TARGET_COL, WEIGHT_COL,
     FULL_FEATURES_96, TDA_42_FEATURES, compute_tda_clusters,
+    REGIME_DELTA_NAMES, REGIME_SCORE_NAME,
 )
 from .metrics import weighted_r2, weighted_r2_per_group
 
@@ -152,11 +153,37 @@ def train(
     # ---- 1. 准备数据 ----
     print("\n[1/4] 加载数据...")
 
-    # 尝试读缓存
+    # 构建期望的特征名（用于缓存校验）
+    if feature_set == "tda":
+        if not TDA_42_FEATURES:
+            compute_tda_clusters()
+        expected_feat_names = TDA_42_FEATURES
+    else:
+        expected_feat_names = FULL_FEATURES_96
+    if use_regime:
+        expected_feat_names = expected_feat_names + REGIME_DELTA_NAMES + REGIME_SCORE_NAME
+
+    # 尝试读缓存（带维度校验）
+    cache_meta = data_cache_dir / f"{feature_set}_cache_meta.json"
+    cache_valid = False
+    if cache_data and cache_meta.exists():
+        try:
+            with open(cache_meta) as f:
+                meta = json.load(f)
+            cached_dim = meta.get("n_features", 0)
+            if cached_dim == len(expected_feat_names):
+                cache_valid = True
+            else:
+                print(f"  缓存维度不匹配 ({cached_dim} vs {len(expected_feat_names)})，清旧缓存...")
+                for f_old in data_cache_dir.glob(f"{feature_set}_*"):
+                    f_old.unlink()
+        except Exception:
+            pass
+
     cache_X_train = data_cache_dir / f"{feature_set}_X_train.npy"
     cache_y_train = data_cache_dir / f"{feature_set}_y_train.npy"
 
-    if cache_data and cache_X_train.exists() and cache_y_train.exists():
+    if cache_valid and cache_X_train.exists() and cache_y_train.exists():
         print("  从缓存加载训练数据...")
         X_train = np.load(cache_X_train, mmap_mode="r")
         y_train = np.load(cache_y_train, mmap_mode="r")
@@ -168,11 +195,15 @@ def train(
             X_val = np.load(val_lazy_cache)
             y_val = np.load(data_cache_dir / f"{feature_set}_y_val.npy")
             w_val = np.load(data_cache_dir / f"{feature_set}_w_val.npy")
-            feat_names = FULL_FEATURES_96 if feature_set == "full" else TDA_42_FEATURES
+            feat_names = expected_feat_names
         else:
-            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate, use_regime, use_ricci)
+            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(
+                feature_set, sample_rate, use_regime, use_ricci
+            )
     else:
-        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate, use_regime, use_ricci)
+        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(
+            feature_set, sample_rate, use_regime, use_ricci
+        )
 
         # 写缓存（加速下次 load / resume）
         if cache_data:
@@ -183,6 +214,9 @@ def train(
             np.save(data_cache_dir / f"{feature_set}_X_val.npy", X_val)
             np.save(data_cache_dir / f"{feature_set}_y_val.npy", y_val)
             np.save(data_cache_dir / f"{feature_set}_w_val.npy", w_val)
+            # 保存缓存元信息（维度，用于下次校验）
+            with open(cache_meta, "w") as f:
+                json.dump({"n_features": len(feat_names), "feature_names": feat_names}, f)
 
     input_dim = X_train.shape[1]
     print(f"  输入维度: {input_dim}")
