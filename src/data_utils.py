@@ -51,6 +51,45 @@ REGIME_KEY_FEATURES = ["feature_39", "feature_50", "feature_41", "feature_05", "
 REGIME_DELTA_NAMES = [f"delta_{f}" for f in REGIME_KEY_FEATURES]
 REGIME_SCORE_NAME = ["regime_score"]
 
+
+def _compute_ricci_weights(
+    y: np.ndarray, symbol_ids: np.ndarray, window: int = 5
+) -> np.ndarray:
+    """
+    在每个 symbol 的时间序列上计算离散 Ricci 曲率代理，转为样本权重。
+
+    Ricci = var(近期 window 个点) / var(远期 window 个点)
+        > 1 → 发散（目标波动加剧）→ 降权
+        < 1 → 收敛（目标趋于稳定）→ 提权
+
+    返回: 权重数组，clip 到 [0.5, 2.0]
+    """
+    n = len(y)
+    weights = np.ones(n, dtype=np.float32)
+    unique_sids = np.unique(symbol_ids)
+
+    for sid in unique_sids:
+        mask = symbol_ids == sid
+        idx = np.where(mask)[0]
+        vals = y[idx]
+        if len(vals) < 2 * window:
+            continue
+
+        ricci = np.ones(len(vals), dtype=np.float32)
+        for i in range(2 * window - 1, len(vals)):
+            recent = vals[i - window + 1 : i + 1]
+            older = vals[i - 2 * window + 1 : i - window + 1]
+            v_old = float(np.var(older))
+            if v_old > 1e-12:
+                ricci[i] = float(np.var(recent)) / v_old
+
+        # 发散 → 高 Ricci → 低权重；收敛 → 低 Ricci → 高权重
+        w = 1.0 / (0.5 + np.clip(ricci, 0.1, 10.0))
+        w = np.clip(w, 0.5, 2.0)
+        weights[idx] = w.astype(np.float32)
+
+    return weights
+
 # ---- TDA 42 维特征集（由 compute_tda_clusters 运行时填充）----
 # 5 个 PCA 主成分 + 17 个孤立特征 + 3 个分类 + 8 个 responder + 9 个 lag
 TDA_CLUSTER_FEATURES: dict[str, list[str]] = {}  # {cluster_name: [feature_list]}
@@ -521,13 +560,16 @@ def _add_regime_features(
     return X_aug, new_names
 
 
-def prepare_mlp_data(feature_set: str = "full", sample_rate: int = 1):
+def prepare_mlp_data(feature_set: str = "full", sample_rate: int = 1,
+                     use_regime: bool = True, use_ricci: bool = False):
     """
     为 MLP 准备数据。
 
     参数:
         feature_set: "full" (96维) 或 "tda" (42维)
         sample_rate: 1/N 采样率（1=全量，3=1/3，降低 RAM 占用）
+        use_regime: 是否添加 torsion 驱动的 regime 特征（Δ + regime_score）
+        use_ricci: 是否用 Ricci 曲率调节样本权重
 
     返回:
         (X_train, y_train, w_train), (X_val, y_val, w_val), feature_names
@@ -565,36 +607,56 @@ def prepare_mlp_data(feature_set: str = "full", sample_rate: int = 1):
     val_lazy = _get_val_lazy()
     X_val_full, y_val, w_val = _load_and_normalize(val_lazy, FULL_FEATURES_96, stats)
 
-    # ---- 添加 regime 感知特征（Δ + regime_score）----
-    print("  计算 regime 感知特征...")
+    # ---- Regime 特征（torsion 驱动）----
     train_sids = train_lazy.select("symbol_id").collect()["symbol_id"].to_numpy()
     val_sids = val_lazy.select("symbol_id").collect()["symbol_id"].to_numpy()
 
-    X_train_regime, regime_names = _add_regime_features(X_train_full, train_sids, FULL_FEATURES_96)
-    X_val_regime, _ = _add_regime_features(X_val_full, val_sids, FULL_FEATURES_96)
-    n_regime = len(regime_names)
-    print(f"  新增 {n_regime} 维: {regime_names}")
+    if use_regime:
+        print("  计算 regime 感知特征...")
+        X_train_regime, regime_names = _add_regime_features(X_train_full, train_sids, FULL_FEATURES_96)
+        X_val_regime, _ = _add_regime_features(X_val_full, val_sids, FULL_FEATURES_96)
+        n_regime = len(regime_names)
+        print(f"  新增 {n_regime} 维: {regime_names}")
+    else:
+        regime_names = []
 
     if feature_set == "tda":
-        # 降维至 42 维（只对原始 96 维，regime 特征保持原样）
         print("  构建 TDA 42 维特征...")
-        X_train_tda = _build_tda_features(X_train_full, FULL_FEATURES_96, stats)
-        X_val_tda = _build_tda_features(X_val_full, FULL_FEATURES_96, stats)
-        # 拼接 regime 特征
-        X_train = np.column_stack([X_train_tda, X_train_regime[:, -n_regime:]])
-        X_val = np.column_stack([X_val_tda, X_val_regime[:, -n_regime:]])
-        feat_names = TDA_42_FEATURES + regime_names
-
-        # 释放中间数组
-        del X_train_full, X_val_full, X_train_regime, X_val_regime
-        gc.collect()
+        X_train_base = _build_tda_features(X_train_full, FULL_FEATURES_96, stats)
+        X_val_base = _build_tda_features(X_val_full, FULL_FEATURES_96, stats)
+        base_names = TDA_42_FEATURES
     else:
-        X_train = X_train_regime
-        X_val = X_val_regime
-        feat_names = FULL_FEATURES_96 + regime_names
+        X_train_base = X_train_full
+        X_val_base = X_val_full
+        base_names = FULL_FEATURES_96
 
-        del X_train_full, X_val_full
-        gc.collect()
+    # 拼接 regime 特征（如果需要）
+    if use_regime:
+        X_train = np.column_stack([X_train_base, X_train_regime[:, -n_regime:]])
+        X_val = np.column_stack([X_val_base, X_val_regime[:, -n_regime:]])
+        feat_names = base_names + regime_names
+    else:
+        X_train = X_train_base
+        X_val = X_val_base
+        feat_names = base_names
+
+    # 释放中间数组
+    del X_train_full, X_val_full, X_train_base, X_val_base
+    if use_regime:
+        del X_train_regime, X_val_regime
+    gc.collect()
+
+    # ---- Ricci 曲率权重 ----
+    if use_ricci:
+        print("  计算 Ricci 曲率样本权重...")
+        ricci_w_train = _compute_ricci_weights(y_train, train_sids)
+        ricci_w_val = _compute_ricci_weights(y_val, val_sids)
+        w_train = (w_train * ricci_w_train).astype(np.float32)
+        w_val = (w_val * ricci_w_val).astype(np.float32)
+        print(f"  训练权重: mean={ricci_w_train.mean():.3f}, "
+              f"range=[{ricci_w_train.min():.2f}, {ricci_w_train.max():.2f}]")
+        print(f"  验证权重: mean={ricci_w_val.mean():.3f}, "
+              f"range=[{ricci_w_val.min():.2f}, {ricci_w_val.max():.2f}]")
 
     elapsed = time.time() - t0
     print(f"  X_train: {X_train.shape}, y_train: {y_train.shape}")

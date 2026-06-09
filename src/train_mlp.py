@@ -99,6 +99,8 @@ def train(
     resume: bool = False,
     cache_data: bool = True,
     sample_rate: int = 1,
+    use_regime: bool = True,
+    use_ricci: bool = False,
 ):
     """
     训练 MLP 模型（GPU）。
@@ -116,6 +118,8 @@ def train(
         resume: 是否从 checkpoint 恢复训练
         cache_data: 是否缓存标准化后的数据到 disk（加速 resume）
         sample_rate: 1/N 训练集采样率（1=全量，3=1/3，降低 RAM）
+        use_regime: 是否添加 torsion 驱动的 regime 特征
+        use_ricci: 是否用 Ricci 曲率调节样本权重
     """
     if hidden_dims is None:
         hidden_dims = [512, 512, 256]
@@ -166,9 +170,9 @@ def train(
             w_val = np.load(data_cache_dir / f"{feature_set}_w_val.npy")
             feat_names = FULL_FEATURES_96 if feature_set == "full" else TDA_42_FEATURES
         else:
-            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate)
+            _, (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate, use_regime, use_ricci)
     else:
-        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate)
+        (X_train, y_train, w_train), (X_val, y_val, w_val), feat_names = prepare_mlp_data(feature_set, sample_rate, use_regime, use_ricci)
 
         # 写缓存（加速下次 load / resume）
         if cache_data:
