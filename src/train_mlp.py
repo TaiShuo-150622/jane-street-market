@@ -216,7 +216,7 @@ def train(
             except Exception:
                 print("  ⚠ optimizer state 不兼容，使用新优化器")
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=8, verbose=True,
+            optimizer, mode="min", factor=0.5, patience=8,
             min_lr=1e-6,
         )
         start_epoch = checkpoint.get("epoch", 0) + 1
@@ -228,7 +228,7 @@ def train(
         model = MLP(input_dim, hidden_dims, dropouts).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=8, verbose=True,
+            optimizer, mode="min", factor=0.5, patience=8,
             min_lr=1e-6,
         )
         best_val_r2 = -np.inf
@@ -343,7 +343,8 @@ def train(
                     model.parameters(), lr=lr, weight_decay=weight_decay
                 )
                 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, mode="min", factor=0.5, patience=8, verbose=True,
+                    optimizer, mode="min", factor=0.5, patience=8,
+                    min_lr=1e-6,
                 )
                 best_val_r2 = -np.inf
                 epochs_no_improve = 0
