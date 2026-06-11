@@ -352,12 +352,10 @@ def prepare_tree_data(
                 X_val_parts.append(oh_val)
                 feat_names.append(f"{cat}_{uv}")
     else:
-        # 保持为整数（CatBoost 原生支持）
+        # 保持为整数（CatBoost 要求分类特征不能是 float）
         for cat in CAT_FEATURES:
-            col_train = train_df[cat].to_numpy().astype(np.float32).reshape(-1, 1)
-            col_val = val_df[cat].to_numpy().astype(np.float32).reshape(-1, 1)
-            col_train = np.nan_to_num(col_train, nan=0.0)
-            col_val = np.nan_to_num(col_val, nan=0.0)
+            col_train = train_df[cat].fill_null(0).to_numpy().reshape(-1, 1)
+            col_val = val_df[cat].fill_null(0).to_numpy().reshape(-1, 1)
             X_train_parts.append(col_train)
             X_val_parts.append(col_val)
             cat_indices.append(len(feat_names))
