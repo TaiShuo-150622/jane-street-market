@@ -98,22 +98,20 @@ def train(
     X_train, y_train, w_train, X_val, y_val, w_val, val_sids, feat_names, cat_indices = \
         prepare_tree_data(sample_rate=sample_rate, one_hot=False)
 
-    # 特征名中分类特征的索引
-    all_feat_list = list(CONTINUOUS_FEATURES) + list(LAG_COLS) + list(CAT_FEATURES)
-    cat_idx_in_features = [all_feat_list.index(c) for c in CAT_FEATURES]
-    print(f"  分类特征索引: {cat_idx_in_features} ({CAT_FEATURES})")
+    # 分类特征名（DataFrame 列名，直接传给 CatBoost）
+    print(f"  分类特征: {CAT_FEATURES}")
 
     # ---- 2. 创建 Pool ----
     print("\n[2/4] 创建 CatBoost Pool...")
     train_pool = Pool(
         X_train, y_train,
         weight=w_train,
-        cat_features=cat_idx_in_features,
+        cat_features=list(CAT_FEATURES),
     )
     val_pool = Pool(
         X_val, y_val,
         weight=w_val,
-        cat_features=cat_idx_in_features,
+        cat_features=list(CAT_FEATURES),
     )
 
     del X_train, y_train, w_train

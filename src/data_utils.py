@@ -361,13 +361,27 @@ def prepare_tree_data(
             cat_indices.append(len(feat_names))
             feat_names.append(cat)
 
-    X_train = np.hstack(X_train_parts)
+    if not one_hot:
+        # CatBoost: 用 DataFrame 保留分类特征的整数类型
+        import pandas as pd
+        X_train = pd.DataFrame()
+        X_val = pd.DataFrame()
+        for name, col_train, col_val in zip(feat_names, X_train_parts, X_val_parts):
+            X_train[name] = col_train.ravel()
+            X_val[name] = col_val.ravel()
+        # 确保分类列为 int（polars 填 null 后可能变成 float）
+        for cat in CAT_FEATURES:
+            X_train[cat] = X_train[cat].fillna(0).astype(int)
+            X_val[cat] = X_val[cat].fillna(0).astype(int)
+    else:
+        X_train = np.hstack(X_train_parts)
+        X_val = np.hstack(X_val_parts)
+
     y_train = train_df[TARGET_COL].to_numpy().astype(np.float64)
     w_train = train_df[WEIGHT_COL].to_numpy().astype(np.float64)
     y_train = np.nan_to_num(y_train, nan=0.0)
     w_train = np.nan_to_num(w_train, nan=0.0)
 
-    X_val = np.hstack(X_val_parts)
     y_val = val_df[TARGET_COL].to_numpy().astype(np.float64)
     w_val = val_df[WEIGHT_COL].to_numpy().astype(np.float64)
     val_sids = val_df["symbol_id"].to_numpy()
