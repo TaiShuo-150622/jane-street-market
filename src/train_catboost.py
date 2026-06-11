@@ -173,7 +173,7 @@ def train(
     # 特征重要性
     print(f"\n  Top 20 特征重要性:")
     importances = model.get_feature_importance()
-    feat_imp = sorted(zip(all_feat_list, importances), key=lambda x: -x[1])
+    feat_imp = sorted(zip(feat_names, importances), key=lambda x: -x[1])
     for name, imp in feat_imp[:20]:
         print(f"    {name:25s}: {imp:.4f}")
 
