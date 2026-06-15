@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore")
 # 确保 src 在 path 中
 sys.path.insert(0, str(Path(__file__).parent))
 
+from concurrent.futures import ThreadPoolExecutor
 from src.data_utils import (
     MODELS_DIR, TRAIN_PATH, TARGET_COL, WEIGHT_COL, TRAIN_END_DATE,
     ensure_models_dir, print_memory_info,
@@ -315,23 +316,26 @@ def main():
         "tree_sample_rate": TREE_SAMPLE_RATE,
     }
 
-    # ---- Step 1: CatBoost ----
+    # ---- Batch 1: CatBoost (全部 6 GPU) ----
     all_results.update(step_catboost())
 
-    # ---- Step 2: MLP v1 ----
-    all_results.update(step_mlp_v1())
+    # ---- Batch 2: 并行训练 (推荐用 run_batch2.sh) ----
+    section("Batch 2/2: XGBoost + MLP v1 + MLP v2 + TabM")
+    print("  💡 提示: 用 run_batch2.sh 可四模型并行 (各占不同 GPU)")
+    print("  💡 当前模式: 串行 (简单可靠)")
 
-    # ---- Step 3: MLP v2 ----
-    all_results.update(step_mlp_v2())
-
-    # ---- Step 4: XGBoost (optional) ----
     if RUN_XGBOOST:
         all_results.update(step_xgboost())
+        gc.collect()
     else:
-        print("\n  ⏭ 跳过 XGBoost (RUN_XGBOOST=False)")
+        print("\n  ⏭ 跳过 XGBoost")
 
-    # ---- Step 5: TabM ----
+    all_results.update(step_mlp_v1())
+    gc.collect()
+    all_results.update(step_mlp_v2())
+    gc.collect()
     all_results.update(step_tabm())
+    gc.collect()
 
     # ---- Step 6: Ensemble ----
     all_results.update(step_ensemble())
