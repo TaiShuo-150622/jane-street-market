@@ -181,9 +181,27 @@ def step_xgboost():
         return {"xgboost": {"status": "failed", "error": str(e)}}
 
 
+def step_tabm():
+    """Step 5: TabM (官方包)"""
+    section("Step 5/6: TabM (官方 tabm 包)")
+    if is_model_done("tabm_results.json"):
+        r2 = _load_model_r2("tabm_results.json")
+        return {"tabm": {"r2": r2, "status": "cached"}}
+    try:
+        from src.train_tabm import train
+        r2 = train()
+        print(f"  ✅ TabM 完成: R²={r2:.6f}")
+        return {"tabm": {"r2": float(r2) if r2 else None, "status": "ok"}}
+    except Exception as e:
+        print(f"  ❌ TabM 失败: {e}")
+        traceback.print_exc()
+        _emergency_gpu_cleanup()
+        return {"tabm": {"status": "failed", "error": str(e)}}
+
+
 def step_ensemble():
-    """Step 5: 集成权重搜索"""
-    section("Step 5/5: 集成权重搜索")
+    """Step 6: 集成权重搜索"""
+    section("Step 6/6: 集成权重搜索")
 
     # 收集可用的预测
     pred_files = {
@@ -191,6 +209,7 @@ def step_ensemble():
         "mlp_full": MODELS_DIR / "mlp_full_val_preds.npy",
         "mlp_tda": MODELS_DIR / "mlp_tda_val_preds.npy",
         "xgboost": MODELS_DIR / "xgboost_val_preds.npy",
+        "tabm": MODELS_DIR / "tabm_val_preds.npy",
     }
 
     y_path = MODELS_DIR / "val_y.npy"
@@ -311,7 +330,10 @@ def main():
     else:
         print("\n  ⏭ 跳过 XGBoost (RUN_XGBOOST=False)")
 
-    # ---- Step 5: Ensemble ----
+    # ---- Step 5: TabM ----
+    all_results.update(step_tabm())
+
+    # ---- Step 6: Ensemble ----
     all_results.update(step_ensemble())
 
     # ---- 终报 ----
@@ -321,7 +343,7 @@ def main():
     section("训练完成")
     print(f"  总耗时: {total_time:.1f}s ({total_time/60:.1f} min, {total_time/3600:.2f} h)")
     print(f"\n  各模型结果:")
-    for model_name in ["catboost", "mlp_full", "mlp_tda", "xgboost"]:
+    for model_name in ["catboost", "mlp_full", "mlp_tda", "xgboost", "tabm"]:
         if model_name in all_results:
             r = all_results[model_name]
             if r.get("status") == "ok" and r.get("r2") is not None:
