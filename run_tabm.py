@@ -41,10 +41,11 @@ RESPONDER_COLS = [f"responder_{i}" for i in range(9) if i != 6]
 LAG_COLS = [f"responder_{i}_lag_1" for i in range(9)]
 
 print(f"\n加载数据: {TRAIN_PATH}")
-df = pl.read_parquet(TRAIN_PATH)
-
-train_df = df.filter(pl.col("date_id") <= TRAIN_END_DATE)
-val_df   = df.filter(pl.col("date_id") > TRAIN_END_DATE)
+# lazy 加载避免 OOM: 先过滤 train/val 再分别 collect
+train_df = pl.scan_parquet(TRAIN_PATH).filter(pl.col("date_id") <= TRAIN_END_DATE).collect()
+print(f"  Train 加载完成: {train_df.height:,} 行")
+val_df   = pl.scan_parquet(TRAIN_PATH).filter(pl.col("date_id") > TRAIN_END_DATE).collect()
+print(f"  Val   加载完成: {val_df.height:,} 行")
 
 avail = [c for c in FEATURE_COLS + CAT_FEATURE_COLS + RESPONDER_COLS + LAG_COLS
          if c in train_df.columns]
