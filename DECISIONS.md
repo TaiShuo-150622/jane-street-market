@@ -2,7 +2,28 @@
 
 > 项目路径: `CodeBuddy/Jane_Street_Market/`
 > 比赛: [Jane Street Real-Time Market Data Forecasting](https://www.kaggle.com/competitions/jane-street-real-time-market-data-forecasting)
-> 最后更新: 2026-06-06
+> 最后更新: 2026-06-18
+
+## 零、远程 GPU 管理工具调研 (2026-06-18)
+
+### OpenClaw
+- **GitHub**: openclaw/openclaw
+- **本质**: 个人 AI 助手网关，把 LLM 接入 WhatsApp/微信/Slack/Discord 等多渠道
+- **MIT 协议**，需要 Node 24
+- **与 GPU 训练无关** ✗
+
+### Hermes Agent
+- **GitHub**: NousResearch/hermes-agent
+- **本质**: 自我进化的 AI Agent 框架
+- **有用功能**: SSH backend（连远程机）、cron 任务调度、web dashboard、子 Agent 委派
+- **潜在用途**: 常驻 GPU 服务器 → web UI 监控训练进度 → cron 自动串下一步
+- **当前决策**: 暂不使用。单台 4090 不需要额外服务层。等 6×2080 Ti 到了再评估。
+
+### 当前方案
+```
+Mac → sshpass → GPU 服务器 → nohup 后台跑 → 定时检查 → 跑完自动下一步
+```
+简单够用，不引入额外依赖。
 
 ---
 
