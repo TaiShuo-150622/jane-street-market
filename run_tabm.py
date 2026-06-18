@@ -78,7 +78,8 @@ t0 = time.time()
 
 model = TabMRegressor(
     device='cuda',
-    n_estimators=16,
+    n_estimators=4,            # 单卡 24GB 保守 K=4
+    batch_size=256,            # 控制内存
     random_state=42,
     verbose=True,
 )
