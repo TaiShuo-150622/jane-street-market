@@ -75,8 +75,8 @@ if RESULT_FILE.exists():
         all_results = _json.load(f)
         progress(f"加载已有结果: {len(all_results)} 条")
 
-for cfg_name, hidden, n_epochs in CONFIGS:
-    for n_samples in SAMPLE_SIZES:
+for n_samples in SAMPLE_SIZES:
+    for cfg_name, hidden, n_epochs in CONFIGS:
         progress(f"\n{'='*60}")
         progress(f"CFG={cfg_name}  |  采样={n_samples/1e6:.1f}M行")
         progress(f"{'='*60}")
