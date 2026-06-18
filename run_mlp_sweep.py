@@ -65,9 +65,15 @@ CONFIGS = [
     ("[512,512,512]_half",  [512, 512, 512],      64),   # epoch 减半
 ]
 
-SAMPLE_SIZES = [2_000_000, 4_000_000]
+SAMPLE_SIZES = [2_000_000, 4_000_000, 8_000_000, 16_000_000]
 
+RESULT_FILE = MODELS_DIR / "mlp_sweep_results.json"
 all_results = []
+if RESULT_FILE.exists():
+    import json as _json
+    with open(RESULT_FILE) as f:
+        all_results = _json.load(f)
+        progress(f"加载已有结果: {len(all_results)} 条")
 
 for cfg_name, hidden, n_epochs in CONFIGS:
     for n_samples in SAMPLE_SIZES:
@@ -103,6 +109,10 @@ for cfg_name, hidden, n_epochs in CONFIGS:
                 "w_r2": float(r2_w), "std_r2": float(r2_std),
                 "time_s": elapsed, "gpu": gpu,
             })
+            # 每跑完一个立即保存
+            with open(RESULT_FILE, "w") as f:
+                json.dump(all_results, f, indent=2)
+            progress(f"  💾 已保存 ({len(all_results)}/{len(CONFIGS)*len(SAMPLE_SIZES)})")
 
             del X_tr, y_tr, model; gc.collect()
 
@@ -126,7 +136,5 @@ for r in all_results:
     else:
         progress(f"{r['cfg']:<20} {r['n_samples']/1e6:>7.1f}M  {r['w_r2']:>10.6f}  {r['std_r2']:>10.6f}  {r['time_s']:>7.0f}s  {r['gpu']}")
 
-with open(MODELS_DIR / "mlp_sweep_results.json", "w") as f:
-    json.dump(all_results, f, indent=2)
-progress(f"\nResults saved: {MODELS_DIR / 'mlp_sweep_results.json'}")
+progress(f"\nAll results in: {RESULT_FILE}")
 progress("ALL DONE!")
