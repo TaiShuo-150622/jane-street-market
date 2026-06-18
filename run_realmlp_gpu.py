@@ -47,7 +47,8 @@ for n_samples in [2_000_000, 4_000_000, 6_000_000, 8_000_000]:
 
         pred = model.predict(X_val).astype(np.float64)
         r2 = weighted_r2(y_val, pred, w_val)
-        print(f"  ✅ R²={r2:.6f}  ({elapsed:.0f}s)")
+        r2_std = float(1 - np.sum((y_val-pred)**2) / np.sum((y_val-y_val.mean())**2))
+        print(f"  ✅ Weighted R²={r2:.6f}  (标准 R²={r2_std:.6f})  ({elapsed:.0f}s)")
 
         del X_tr, y_tr, model; gc.collect()
     except Exception as e:
