@@ -40,7 +40,7 @@ for n_samples in [2_000_000, 4_000_000, 6_000_000, 8_000_000]:
     X_tr = np.nan_to_num(X_tr, nan=0.0); y_tr = np.nan_to_num(y_tr, nan=0.0)
 
     try:
-        model = RealMLP_TD_Regressor(device='cuda', verbosity=0, random_state=42, n_epochs=128, batch_size=8192, hidden_sizes=[1024,1024,1024])
+        model = RealMLP_TD_Regressor(device='cuda', verbosity=0, random_state=42, n_epochs=128, batch_size=8192, hidden_sizes=[512,512,512])
         t0 = time.time()
         model.fit(X_tr, y_tr)
         elapsed = time.time() - t0
