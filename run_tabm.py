@@ -78,14 +78,33 @@ t0 = time.time()
 
 model = TabMRegressor(
     device='cuda',
-    n_estimators=16,          # K=16 子模型 (6卡能跑大一点)
+    n_estimators=16,
     random_state=42,
+    verbose=True,
 )
 
-print(f"  训练中...")
+# 心跳线程：每 30 秒打印一次
+import threading
+running = True
+def heartbeat():
+    start = time.time()
+    while running:
+        time.sleep(30)
+        if running:
+            elapsed = time.time() - start
+            mem = torch.cuda.memory_allocated(0) / 1e9 if torch.cuda.is_available() else 0
+            print(f"  [心跳] 训练中... {elapsed/60:.0f}min  GPU内存: {mem:.1f}GB", flush=True)
+
+hb = threading.Thread(target=heartbeat, daemon=True)
+hb.start()
+
+print(f"  GPU 内存 (训前): {torch.cuda.memory_allocated(0)/1e9:.1f} GB")
+print(f"  训练中... (47M行 × {X_train.shape[1]}特征, 预计 30-90 min)")
 model.fit(X_train, y_train)
 
+running = False
 train_time = time.time() - t0
+print(f"  GPU 内存 (训后): {torch.cuda.memory_allocated(0)/1e9:.1f} GB")
 print(f"  训练完成: {train_time:.0f}s ({train_time/60:.1f} min)")
 
 # ============================================================
