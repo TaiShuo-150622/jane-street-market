@@ -51,7 +51,7 @@ avail = [c for c in FEATURE_COLS + CAT_FEATURE_COLS + RESPONDER_COLS + LAG_COLS
 X_train = train_df.select(avail).to_numpy().astype(np.float32)
 y_train = train_df[TARGET_COL].to_numpy().astype(np.float32).ravel()
 w_train = train_df[WEIGHT_COL].to_numpy().astype(np.float32).ravel()
-del train_df  # 释放内存
+del train_df; gc.collect()  # 强制释放
 
 val_df   = pl.scan_parquet(TRAIN_PATH).filter(pl.col("date_id") > TRAIN_END_DATE).collect()
 print(f"  Val   加载完成: {val_df.height:,} 行")
@@ -59,7 +59,7 @@ print(f"  Val   加载完成: {val_df.height:,} 行")
 X_val = val_df.select(avail).to_numpy().astype(np.float32)
 y_val = val_df[TARGET_COL].to_numpy().astype(np.float32).ravel()
 w_val = val_df[WEIGHT_COL].to_numpy().astype(np.float32).ravel()
-del val_df  # 释放内存
+del val_df; gc.collect()  # 强制释放
 
 X_train = np.nan_to_num(X_train, nan=0.0)
 X_val   = np.nan_to_num(X_val, nan=0.0)
