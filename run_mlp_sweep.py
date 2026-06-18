@@ -54,19 +54,22 @@ progress(f"Val: {X_val.shape[0]:,} rows × {X_val.shape[1]} cols\n")
 
 # ---- 配置列表：不同层数 + 宽度 ----
 CONFIGS = [
-    ("[256,256,256]",     [256, 256, 256]),
-    ("[512,512,512]",     [512, 512, 512]),
-    ("[1024,1024,1024]",  [1024, 1024, 1024]),
-    ("[512, 512]",        [512, 512]),
-    ("[256, 512, 256]",   [256, 512, 256]),
-    ("[1024, 512]",       [1024, 512]),
+    ("[256,256,256]",       [256, 256, 256],      128),
+    ("[512,512,512]",       [512, 512, 512],      128),
+    ("[1024,1024,1024]",    [1024, 1024, 1024],   128),
+    ("[512,512]",           [512, 512],           128),
+    ("[256,512,256]",       [256, 512, 256],      128),
+    ("[1024,512]",          [1024, 512],          128),
+    ("[256,256,256,256]",   [256, 256, 256, 256], 128),  # 4层
+    ("[256,128,64]",        [256, 128, 64],       128),  # 漏斗型
+    ("[512,512,512]_half",  [512, 512, 512],      64),   # epoch 减半
 ]
 
 SAMPLE_SIZES = [2_000_000, 4_000_000]
 
 all_results = []
 
-for cfg_name, hidden in CONFIGS:
+for cfg_name, hidden, n_epochs in CONFIGS:
     for n_samples in SAMPLE_SIZES:
         progress(f"\n{'='*60}")
         progress(f"CFG={cfg_name}  |  采样={n_samples/1e6:.1f}M行")
@@ -82,7 +85,7 @@ for cfg_name, hidden in CONFIGS:
             t0 = time.time()
             model = RealMLP_TD_Regressor(
                 device='cuda', verbosity=0, random_state=42,
-                n_epochs=128, batch_size=8192,
+                n_epochs=n_epochs, batch_size=8192,
                 hidden_sizes=hidden,
             )
             model.fit(X_tr, y_tr)
